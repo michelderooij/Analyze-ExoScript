@@ -1,8 +1,11 @@
 # Analyze-ExoScript
-Script to analyze Exchange Online Management scripts, indicating contained EXO cmdlets are REST or RPS based
 
-If there are no Exchange cmdlets found which require RPSSession, the script can run without -UseRPSSession, Basic authentication
-can be disabled on the client as it no longer needs to connect using WinRM.
+## Getting Started
+
+Script to analyze Exchange Online Management scripts, indicating contained EXO cmdlets are REST or RPS based.
+Idea is that when there are no Exchange cmdlets found requiring UseRPSSession, the script can run with Basic authentication 
+disabled on the WinRM client. Other usage scenarios are cross-referencing scripts vs Echange commands, or scanning
+scripts to assist in tailoring RBAC permissions.
 
 On the initial run, the external file containing information on cmdlets supporting REST and which require RPS,
 will be created by connecting once to Exchange Online and once using RPSSession. The external file will be 
@@ -12,12 +15,15 @@ been installed, you can be notified of the update and refresh the cmdlet informa
 Important: Your current role assignments determine which cmdlets are available to you in Exchange Online.
 Make sure you run the script in at least the security context used to execute the script.
 
-Output consists of objects with the following properties:
-- Cmdlet is the name of the Exchange Online cmdlet found
-- Type can consists of:
-  - REST indicates an REST-based cmdlet
-  - RPS indicates an RPS-only cmdlet
-  - RPS (Map:...) indicates an RPS-based cmdlet which can be refactored to the indicated REST-based cmdlet 
-- Parameters are the parameters used in the command
-- File is the file analyzed
-- Line is the line where the cmdlet is located
+### About
+
+For more information on this script, as well as usage and examples, see the related blog article, 
+[Analyzing Exchange Online scripts](https://eightwone.com/2022/05/25/analyzing-exchange-online-scripts/).
+
+## License
+
+This project is licensed under the MIT License - see the LICENSE for details.
+
+Important: Your current role assignments determine which cmdlets are available to you in Exchange Online.
+Make sure you run the script in at least the security context used to execute the script.
+
