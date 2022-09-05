@@ -9,7 +9,7 @@
     ENTIRE RISK OF THE USE OR THE RESULTS FROM THE USE OF THIS CODE REMAINS
     WITH THE USER.
 
-    Version 1.1, September 5th, 2022
+    Version 1.2, September 5th, 2022
 
     .DESCRIPTION
     This script can analyze Exchange Online Management scripts, indicating if all contained Exchange 
@@ -47,6 +47,8 @@
     1.0      Initial release
     1.1      Added Certificate parameters etc for unattended usage
              Changed File parameter to support paths
+    1.2      Added missing default Connect + REST-based cmdlets for analysis
+             Added seperate column for REST-backed > REST-based mapping opportunities
 
     .PARAMETER File
     Name of the PowerShell Exchange Online Management script file(s) to analyze.
@@ -196,13 +198,15 @@ begin {
         $CmdREST= Get-Command -Module (Get-Command -Name Get-Mailbox).Module | Select Name,@{n='Type';e={'REST'}}
         Write-Verbose ('REST session returned {0} cmdlets' -f $CmdREST.count)
 
+        $CmdDefault= Get-Command -Module (Get-Command -Name Connect-ExchangeOnline).Module | Select Name,@{n='Type';e={'REST'}}
+
         # Cleanup
         Remove-Module -Name (Get-Command -Name Get-Mailbox).Module
 
         # Make a unique list of cmdlets, where REST prevails when existing in both sets
         $CmdletInfo= [pscustomobject]@{
             EXOVersion= $EXOModuleVersion
-            Cmdlets= $CmdREST + $CmdRPS | Sort-Object -Property Type,Name -Unique 
+            Cmdlets= $CmdREST + $CmdRPS + $CmdDefault | Sort-Object -Property Type,Name -Unique 
         }
         Write-Verbose ('Exporting cmdlet information to {0}' -f $DataFile)
         $CmdletInfo | Export-CliXml -Path $DataFile -Force 
@@ -230,19 +234,14 @@ begin {
 
     # Create hashtable for easy lookups
     $ExoCmdlet= @{}
+    $ExoAltCmdlet= @{}
     $CmdletInfo.Cmdlets | Sort-Object -Property Type,Name -Descending | ForEach-Object { 
-        If( $_.Type -eq 'RPS') {
-            If( $CmdletMap[ $_.Name]) {
-                $ExoCmdlet[ $_.Name]= '{0} (Map:{1})' -f $_.Type, $CmdletMap[ $_.Name]
-            }
-            Else {
-                $ExoCmdlet[ $_.Name]= $_.Type 
-            }
-        }
-        Else {
-            $ExoCmdlet[ $_.Name]= $_.Type 
+        $ExoCmdlet[ $_.Name]= $_.Type
+        If( $_.Type -eq 'RPS' -and $CmdletMap[ $_.Name]) {
+            $ExoAltCmdlet[ $_.Name]= $CmdletMap[ $_.Name]
         }
     }
+
 }
 
 process {
@@ -262,7 +261,8 @@ process {
                         Command = $Cmd.CommandElements[0].Value
                         Type= $ExoCmdlet[ $Cmd.CommandElements[0].Value]
                         Parameters = $Cmd.CommandElements.ParameterName
-                        File= $_.FullName
+                        Alt= $CmdletMap[ $Cmd.CommandElements[0].Value]
+                        File= $_.Name
                         Line= $Cmd.Extent.StartLineNumber
                     }
                 }
@@ -274,3 +274,4 @@ process {
 end {
 
 }
+                  
