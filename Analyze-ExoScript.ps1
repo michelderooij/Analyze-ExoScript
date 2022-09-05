@@ -9,7 +9,7 @@
     ENTIRE RISK OF THE USE OR THE RESULTS FROM THE USE OF THIS CODE REMAINS
     WITH THE USER.
 
-    Version 1.2, September 5th, 2022
+    Version 1.21, September 5th, 2022
 
     .DESCRIPTION
     This script can analyze Exchange Online Management scripts, indicating if all contained Exchange 
@@ -49,6 +49,7 @@
              Changed File parameter to support paths
     1.2      Added missing default Connect + REST-based cmdlets for analysis
              Added seperate column for REST-backed > REST-based mapping opportunities
+    1.21     Fixed processing non-Exchange cmdlets
 
     .PARAMETER File
     Name of the PowerShell Exchange Online Management script file(s) to analyze.
@@ -256,10 +257,11 @@ process {
 
             $CmdsInFile= $AST.FindAll({$args[0].GetType().Name -like 'CommandAst'}, $true)
             ForEach( $Cmd in $CmdsInFile) {
-                If($ExoCmdlet[ $Cmd.CommandElements[0].Value] -or $ShowAll) {
+                $Type= If( $Cmd.CommandElements[0].Value) { $ExoCmdlet[ $Cmd.CommandElements[0].Value] } Else { $null }
+                If($Type -or $ShowAll) {
                     [pscustomobject]@{
                         Command = $Cmd.CommandElements[0].Value
-                        Type= $ExoCmdlet[ $Cmd.CommandElements[0].Value]
+                        Type= $Type
                         Parameters = $Cmd.CommandElements.ParameterName
                         Alt= $CmdletMap[ $Cmd.CommandElements[0].Value]
                         File= $_.Name
