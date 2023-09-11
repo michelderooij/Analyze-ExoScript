@@ -9,7 +9,7 @@
     ENTIRE RISK OF THE USE OR THE RESULTS FROM THE USE OF THIS CODE REMAINS
     WITH THE USER.
 
-    Version 1.22, September 12th, 2022
+    Version 1.3, September 11th, 2023
 
     .DESCRIPTION
     This script can analyze Exchange Online Management scripts, indicating if all contained Exchange 
@@ -51,6 +51,8 @@
              Added seperate column for REST-backed > REST-based mapping opportunities
     1.21     Fixed processing non-Exchange cmdlets
     1.22     Fixed output issue when showing all cmdlets
+    1.3      Removed RPS due to BasicAuth deprecation in Exchange Online
+             Added UserPrincipalName parameter for interactive logon
 
     .PARAMETER File
     Name of the PowerShell Exchange Online Management script file(s) to analyze.
@@ -60,6 +62,18 @@
 
     .PARAMETER Refresh
     Tells the script to refresh the cmdlet information files.
+
+    .PARAMETER UserPrincipalName
+
+    .PARAMETER Organization
+
+    .PARAMETER AppId
+
+    .PARAMETER CertificateFile
+
+    .PARAMETER CertificateThumbprint
+
+    .PARAMETER CertificatePassword
 
     .EXAMPLE
     Analyze-ExoScript.ps1 -File Permissions.ps1 
@@ -76,26 +90,26 @@
 )]
 param(
     [parameter( Mandatory= $true, ValueFromPipeline = $true, ValueFromPipelineByPropertyName = $true, ParameterSetName= 'DefaultAuth')] 
-    [parameter( Mandatory= $true, ValueFromPipeline = $true, ValueFromPipelineByPropertyName = $true, ParameterSetName= 'BasicAuth')] 
     [parameter( Mandatory= $true, ValueFromPipeline = $true, ValueFromPipelineByPropertyName = $true, ParameterSetName= 'OAuthCertThumb')] 
     [parameter( Mandatory= $true, ValueFromPipeline = $true, ValueFromPipelineByPropertyName = $true, ParameterSetName= 'OAuthCertFile')] 
     [parameter( Mandatory= $true, ValueFromPipeline = $true, ValueFromPipelineByPropertyName = $true, ParameterSetName= 'OAuthCertSecret')] 
     [ValidateScript({ Test-Path -Path $_ -PathType Any})]
     [String[]]$File,
     [parameter( Mandatory= $false, ParameterSetName= 'DefaultAuth')] 
-    [parameter( Mandatory= $false, ParameterSetName= 'BasicAuth')] 
     [parameter( Mandatory= $false, ParameterSetName= 'OAuthCertThumb')] 
     [parameter( Mandatory= $false, ParameterSetName= 'OAuthCertFile')] 
     [parameter( Mandatory= $false, ParameterSetName= 'OAuthCertSecret')] 
     [Switch]$ShowAll,
     [parameter( Mandatory= $false, ParameterSetName= 'DefaultAuth')] 
-    [parameter( Mandatory= $false, ParameterSetName= 'BasicAuth')] 
     [parameter( Mandatory= $false, ParameterSetName= 'OAuthCertThumb')] 
     [parameter( Mandatory= $false, ParameterSetName= 'OAuthCertFile')] 
     [parameter( Mandatory= $false, ParameterSetName= 'OAuthCertSecret')] 
     [Switch]$Refresh,
-    [parameter( Mandatory= $true, ParameterSetName= 'BasicAuth')] 
-    [System.Management.Automation.PsCredential]$Credential,
+    [parameter( Mandatory= $false, ParameterSetName= 'DefaultAuth')] 
+    [parameter( Mandatory= $false, ParameterSetName= 'OAuthCertThumb')] 
+    [parameter( Mandatory= $false, ParameterSetName= 'OAuthCertFile')] 
+    [parameter( Mandatory= $false, ParameterSetName= 'OAuthCertSecret')] 
+    [String]$UserPrincipalName,
     [parameter( Mandatory= $true, ParameterSetName= 'OAuthCertThumb')] 
     [String]$CertificateThumbprint,
     [parameter( Mandatory= $true, ParameterSetName= 'OAuthCertFile')] 
@@ -146,10 +160,6 @@ begin {
 
     Write-Host ('ExchangeOnlineManagement module {0} installed' -f $EXOModuleVersion)
 
-    If(!( (Get-Command -Name Connect-ExchangeOnline).Parameters.UseRPSSession)) {
-        Throw( 'This version of the Exchange Online Management module does not support the UseRPSSession switch' -f $EXOModuleVersion)
-    }
-
     $DataFile= Join-Path -Path $PSScriptRoot -Child ('EXO-CmdletInfo.xml')
 
     If(!( Test-Path -Path $DataFile) -or $Refresh) {
@@ -168,47 +178,27 @@ begin {
             CertificateFilePath= $CertificateFile
             CertificatePassword= $CertificatePassword
             CertificateThumbprint= $CertificateThumbprint
-            Credential= $Credential
+            UserPrincipalName= $UserPrincipalName
         }
 
-        # Connect twice to retrieve cmdlets for REST and RPS, and determine which ones require RPS.
-        Write-Host ('Connecting to Exchange Online using RPS')
-        ExchangeOnlineManagement\Connect-ExchangeOnline -UseRPSSession -ShowBanner:$False @AuthParams
+        # Connect to retrieve EXO cmdlets 
+        Write-Host ('Connecting to Exchange Online')
+        ExchangeOnlineManagement\Connect-ExchangeOnline -ShowBanner:$False @AuthParams
         If(!( Get-Command -Name Get-Mailbox -ErrorAction SilentlyContinue)) {
             Throw ('We do not seem to be connected to Exchange Online Management session, exiting')
         }
-        If(!( (Get-Module -Name (Get-Command -Name Get-Mailbox -ErrorAction SilentlyContinue).Module).Description -like '*Implicit Remoting*')) {
-            Throw ('Exchange Online Management session not connected with UseRPSSession')
-        }
-        $CmdRPS= Get-Command -Module (Get-Command -Name Get-Mailbox).Module | Select Name,@{n='Type';e={'RPS'}}
-        Write-Verbose ('RPS session returned {0} cmdlets' -f $CmdRPS.Count)
-
-        $ExoSession= Get-PSSession | Where-Object {$_.CurrentModuleName -eq (Get-Command -Name Get-Mailbox).Module.Name}
-        $User= $ExoSession.Runspace.ConnectionInfo.Credential.UserName
-        Write-Verbose ('Connected using {0}' -f $User)
-
-        # Cleanup
-        Remove-Module -Name (Get-Command -Name Get-Mailbox).Module
-        Remove-PSSession -Session $ExoSession | Out-Null
-
-        # Connect using REST, re-using account used to connect to first session
-        Write-Host ('Connecting to Exchange Online using regular connection, re-using account {0}' -f $User)
-        ExchangeOnlineManagement\Connect-ExchangeOnline -UserPrincipalName $User -ShowBanner:$False @AuthParams
-        If(!( Get-Command -Name Get-Mailbox -ErrorAction SilentlyContinue)) {
-            Throw ('We do not seem to be connected to Exchange Online Management session, exiting')
-        }
-        $CmdREST= Get-Command -Module (Get-Command -Name Get-Mailbox).Module | Select Name,@{n='Type';e={'REST'}}
+        $CmdREST= Get-Command -Module (Get-Command -Name Get-Mailbox).Module | Select Name,@{n='Type';e={'RESTbacked'}}
         Write-Verbose ('REST session returned {0} cmdlets' -f $CmdREST.count)
 
-        $CmdDefault= Get-Command -Module (Get-Command -Name Connect-ExchangeOnline).Module | Select Name,@{n='Type';e={'REST'}}
+        $CmdDefault= Get-Command -Module (Get-Command -Name Connect-ExchangeOnline).Module | Select Name,@{n='Type';e={'RESTbased'}}
 
         # Cleanup
         Remove-Module -Name (Get-Command -Name Get-Mailbox).Module
 
-        # Make a unique list of cmdlets, where REST prevails when existing in both sets
+        # Make a unique list of cmdlets
         $CmdletInfo= [pscustomobject]@{
             EXOVersion= $EXOModuleVersion
-            Cmdlets= $CmdREST + $CmdRPS + $CmdDefault | Sort-Object -Property Type,Name -Unique 
+            Cmdlets= $CmdREST + $CmdDefault | Sort-Object -Property Type,Name -Unique 
         }
         Write-Verbose ('Exporting cmdlet information to {0}' -f $DataFile)
         $CmdletInfo | Export-CliXml -Path $DataFile -Force 
@@ -237,13 +227,13 @@ begin {
     # Create hashtable for easy lookups
     $ExoCmdlet= @{}
     $ExoAltCmdlet= @{}
+
     $CmdletInfo.Cmdlets | Sort-Object -Property Type,Name -Descending | ForEach-Object { 
         $ExoCmdlet[ $_.Name]= $_.Type
-        If( $_.Type -eq 'RPS' -and $CmdletMap[ $_.Name]) {
+        If( $CmdletMap[ $_.Name]) {
             $ExoAltCmdlet[ $_.Name]= $CmdletMap[ $_.Name]
         }
     }
-
 }
 
 process {
