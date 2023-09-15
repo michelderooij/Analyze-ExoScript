@@ -9,7 +9,7 @@
     ENTIRE RISK OF THE USE OR THE RESULTS FROM THE USE OF THIS CODE REMAINS
     WITH THE USER.
 
-    Version 1.3, September 11th, 2023
+    Version 1.31, September 15th, 2023
 
     .DESCRIPTION
     This script can analyze Exchange Online Management scripts, indicating if all contained Exchange 
@@ -51,8 +51,9 @@
              Added seperate column for REST-backed > REST-based mapping opportunities
     1.21     Fixed processing non-Exchange cmdlets
     1.22     Fixed output issue when showing all cmdlets
-    1.3      Removed RPS due to BasicAuth deprecation in Exchange Online
+    1.3      Removed RPS due to deprecation in Exchange Online
              Added UserPrincipalName parameter for interactive logon
+    1.31     Refresh can now be used without specifying File to just update the cmdlet set
 
     .PARAMETER File
     Name of the PowerShell Exchange Online Management script file(s) to analyze.
@@ -100,30 +101,43 @@ param(
     [parameter( Mandatory= $false, ParameterSetName= 'OAuthCertFile')] 
     [parameter( Mandatory= $false, ParameterSetName= 'OAuthCertSecret')] 
     [Switch]$ShowAll,
-    [parameter( Mandatory= $false, ParameterSetName= 'DefaultAuth')] 
-    [parameter( Mandatory= $false, ParameterSetName= 'OAuthCertThumb')] 
-    [parameter( Mandatory= $false, ParameterSetName= 'OAuthCertFile')] 
-    [parameter( Mandatory= $false, ParameterSetName= 'OAuthCertSecret')] 
+    [parameter( Mandatory= $true, ParameterSetName= 'DefaultAuthRefresh')] 
+    [parameter( Mandatory= $true, ParameterSetName= 'OAuthCertThumbRefresh')] 
+    [parameter( Mandatory= $true, ParameterSetName= 'OAuthCertFileRefresh')] 
+    [parameter( Mandatory= $true, ParameterSetName= 'OAuthCertSecretRefresh')] 
     [Switch]$Refresh,
     [parameter( Mandatory= $false, ParameterSetName= 'DefaultAuth')] 
     [parameter( Mandatory= $false, ParameterSetName= 'OAuthCertThumb')] 
     [parameter( Mandatory= $false, ParameterSetName= 'OAuthCertFile')] 
     [parameter( Mandatory= $false, ParameterSetName= 'OAuthCertSecret')] 
+    [parameter( Mandatory= $false, ParameterSetName= 'DefaultAuthRefresh')] 
+    [parameter( Mandatory= $false, ParameterSetName= 'OAuthCertThumbRefresh')] 
+    [parameter( Mandatory= $false, ParameterSetName= 'OAuthCertFileRefresh')] 
+    [parameter( Mandatory= $false, ParameterSetName= 'OAuthCertSecretRefresh')] 
     [String]$UserPrincipalName,
     [parameter( Mandatory= $true, ParameterSetName= 'OAuthCertThumb')] 
+    [parameter( Mandatory= $true, ParameterSetName= 'OAuthCertThumbRefresh')] 
     [String]$CertificateThumbprint,
     [parameter( Mandatory= $true, ParameterSetName= 'OAuthCertFile')] 
+    [parameter( Mandatory= $true, ParameterSetName= 'OAuthCertFileRefresh')] 
     [ValidateScript({ Test-Path -Path $_ -PathType Leaf})]
     [String]$CertificateFile,
     [parameter( Mandatory= $false, ParameterSetName= 'OAuthCertFile')] 
+    [parameter( Mandatory= $false, ParameterSetName= 'OAuthCertFileRefresh')] 
     [System.Security.SecureString]$CertificatePassword,
     [parameter( Mandatory= $true, ParameterSetName= 'OAuthCertThumb')] 
     [parameter( Mandatory= $true, ParameterSetName= 'OAuthCertFile')] 
     [parameter( Mandatory= $true, ParameterSetName= 'OAuthCertSecret')] 
+    [parameter( Mandatory= $true, ParameterSetName= 'OAuthCertThumbRefresh')] 
+    [parameter( Mandatory= $true, ParameterSetName= 'OAuthCertFileRefresh')] 
+    [parameter( Mandatory= $true, ParameterSetName= 'OAuthCertSecretRefresh')] 
     [string]$Organization,
     [parameter( Mandatory= $true, ParameterSetName= 'OAuthCertThumb')] 
     [parameter( Mandatory= $true, ParameterSetName= 'OAuthCertFile')] 
     [parameter( Mandatory= $true, ParameterSetName= 'OAuthCertSecret')] 
+    [parameter( Mandatory= $true, ParameterSetName= 'OAuthCertThumbRefresh')] 
+    [parameter( Mandatory= $true, ParameterSetName= 'OAuthCertFileRefresh')] 
+    [parameter( Mandatory= $true, ParameterSetName= 'OAuthCertSecretRefresh')] 
     [string]$AppId
 )
 #Requires -Version 3.0
@@ -182,6 +196,11 @@ begin {
         }
 
         # Connect to retrieve EXO cmdlets 
+#        $ExoSession= Get-PSSession | Where-Object {$_.CurrentModuleName -eq (Get-Command -Name Get-Mailbox).Module.Name}
+#        $User= $ExoSession.Runspace.ConnectionInfo.Credential.UserName
+#        Write-Verbose ('Connected using {0}' -f $User)
+
+        # Connect using REST, re-using account used to connect to first session
         Write-Host ('Connecting to Exchange Online')
         ExchangeOnlineManagement\Connect-ExchangeOnline -ShowBanner:$False @AuthParams
         If(!( Get-Command -Name Get-Mailbox -ErrorAction SilentlyContinue)) {
